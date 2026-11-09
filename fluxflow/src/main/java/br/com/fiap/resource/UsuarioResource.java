@@ -43,9 +43,11 @@ public class UsuarioResource {
             if (sessaoAnterior != null) {
                 sessaoAnterior.invalidate();
             }
-            // Cria uma nova sessão e armazena o ID do usuário.
+            // Cria uma nova sessão e armazena o ID do usuário e seu perfil.
             HttpSession session = request.getSession(true);
+
             session.setAttribute("idUsuario", usuario.getIdUsuario());
+            session.setAttribute("perfilAcessoIdPerfil", usuario.getPerfilAcessoIdPerfil());
 
             return ResponseEntity.ok(usuario);
         } catch (IllegalArgumentException e) {
