@@ -13,6 +13,15 @@ public class UsuarioBO {
     private final UsuarioDAO usuarioDAO = new UsuarioDAO();
     // passwordEnconder para proteção de senha em Hash
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    // Constante que define permissões de ADM
+    private static final List<String> EMAILS_ADMIN = List.of(
+            "gigiozetto@gmail.com",
+            "felipelimaoliveira2008@gmail.com",
+            "raphael.rgb07@gmail.com",
+            "profalexandre.jesus@fiap.com.br",
+            "profgilberto.neves@fiap.com.br",
+            "profgustavo.figueiredo@fiap.com.br"
+    );
 
     // save()
     public UsuarioTO save(UsuarioTO usuario) {
@@ -26,6 +35,14 @@ public class UsuarioBO {
         usuario.setDtCadastro(LocalDate.now());
         if (usuario.getStUsuario() == null) {
             usuario.setStUsuario("T");
+        }
+        // Define automaticamente o perfil de acesso.
+        String email = usuario.getDsEmail().trim().toLowerCase();
+
+        if (EMAILS_ADMIN.contains(email)) {
+            usuario.setPerfilAcessoIdPerfil(16L);
+        } else {
+            usuario.setPerfilAcessoIdPerfil(17L);
         }
         // Salva no banco.
         usuarioDAO.save(usuario);
