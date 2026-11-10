@@ -8,7 +8,7 @@ public class FonteDadosDAO {
     // Metodo que recebe o ID de uma fonte e verifica se está cadastrada no banco
     public boolean existe(Long idFonte) {
         // Comando sql a ser executado
-        String sql = "SELECT COUNT(*)FROM FONTE_DADOS WHERE ID_FONTE = ?";
+        String sql = "SELECT COUNT(*) FROM FONTE_DADOS WHERE ID_FONTE = ?";
         // try-with-resources
         try (Connection conn = ConnectionFactory.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
