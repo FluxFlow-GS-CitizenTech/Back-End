@@ -116,8 +116,8 @@ public class EstacaoResource {
     public ResponseEntity<?> addLinha(@PathVariable Long idEstacao, @PathVariable Long idLinha, HttpServletRequest request) {
         // Armazena  sessão
         HttpSession session = obterSessao(request);
-        // verifica se está logado
-        verificarUsuarioLogado(session);
+        // verifica se é adm
+        verificarAdmin(session);
         // Faz o relacionamento
         estacaoBO.addLinha(idEstacao, idLinha);
 

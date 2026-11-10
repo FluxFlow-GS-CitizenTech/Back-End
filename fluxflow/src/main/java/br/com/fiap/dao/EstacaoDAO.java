@@ -123,7 +123,7 @@ public class EstacaoDAO {
     // DELETE
     public void delete(Long id) {
         // Comando sql que exclui um registro da tabela associativa
-        String sqlVinculos = "DELETE FROM LINHA_ESTACAO WHERE ESTACAO_ID_ESTACAO = ?";
+        String sqlVinculos = "DELETE FROM LINHA_ESTACAO WHERE ID_ESTACAO = ?";
         // Comando sql que exclui a estação
         String sqlEstacao = "DELETE FROM ESTACAO WHERE ID_ESTACAO = ?";
         // try-with-resources
@@ -148,7 +148,7 @@ public class EstacaoDAO {
     // Lista as linhas vinculadas a uma estação
     public List<Long> findLinhasByEstacao(Long idEstacao) {
         // Comando sql a ser executado
-        String sql = "SELECT LINHA_ID_LINHA FROM LINHA_ESTACAO WHERE ESTACAO_ID_ESTACAO = ? ORDER BY LINHA_ID_LINHA";
+        String sql = "SELECT ID_LINHA FROM LINHA_ESTACAO WHERE ID_ESTACAO = ? ORDER BY ID_LINHA";
         // Nova lista de linhas
         List<Long> linhas = new ArrayList<>();
         // try-with-resources
@@ -161,7 +161,7 @@ public class EstacaoDAO {
                 // Enquanto o objeto retornar uma linha
                 // essa linha é adicionada na lista
                 while (rs.next()) {
-                    linhas.add(rs.getLong("LINHA_ID_LINHA"));
+                    linhas.add(rs.getLong("ID_LINHA"));
                 }
             }
         } catch (SQLException e) {
@@ -173,25 +173,42 @@ public class EstacaoDAO {
 
     // Adiciona uma linha a uma estação
     public void addLinha(Long idEstacao, Long idLinha) {
-        // Comando sql a ser executado
-        String sql = "INSERT INTO LINHA_ESTACAO (LINHA_ID_LINHA, ESTACAO_ID_ESTACAO) VALUES (?, ?)";
-        // try-with-resources
-        try (Connection connection = ConnectionFactory.getConnection();
-             PreparedStatement ps = connection.prepareStatement(sql)) {
-            // Substituindo ?
-            ps.setLong(1, idLinha);
-            ps.setLong(2, idEstacao);
-            // Execução de comando
-            ps.executeUpdate();
+        String sqlOrdem = "SELECT NVL(MAX(DS_ORDEM), 0) + 1 FROM LINHA_ESTACAO WHERE ID_LINHA = ?";
+
+        String sqlInsert = "INSERT INTO LINHA_ESTACAO (ID_LINHA, ID_ESTACAO, DS_ORDEM) VALUES (?, ?, ?)";
+
+        try (Connection conn = ConnectionFactory.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                int proximaOrdem;
+                try (PreparedStatement ps = conn.prepareStatement(sqlOrdem)) {
+                    ps.setLong(1, idLinha);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        rs.next();
+                        proximaOrdem = rs.getInt(1);
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(sqlInsert)) {
+                    ps.setLong(1, idLinha);
+                    ps.setLong(2, idEstacao);
+                    ps.setInt(3, proximaOrdem);
+                    ps.executeUpdate();
+                }
+                // Commit se der tudo certo
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
         } catch (SQLException e) {
-            throw new RuntimeException("Erro ao vincular linha à estação: " + e.getMessage(), e);
+            throw new RuntimeException("Erro ao associar estação à linha: " + e.getMessage(), e);
         }
     }
 
     // Remove o vínculo entre uma estação e uma linha
     public void removeLinha(Long idEstacao, Long idLinha) {
         // Comando sql a ser executado
-        String sql = "DELETE FROM LINHA_ESTACAO WHERE ESTACAO_ID_ESTACAO = ? AND LINHA_ID_LINHA = ?";
+        String sql = "DELETE FROM LINHA_ESTACAO WHERE ID_ESTACAO = ? AND ID_LINHA = ?";
         // try-with-resources
         try (Connection connection = ConnectionFactory.getConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
