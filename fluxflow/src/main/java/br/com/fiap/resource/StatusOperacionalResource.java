@@ -49,11 +49,14 @@ public class StatusOperacionalResource {
 
         verificarAdmin(request);
 
-        HttpSession sessao = obterSessao(request);
+        String origem = status.getDsOrigem();
 
-        Long idUsuario = (Long) sessao.getAttribute("idUsuario");
-
-        status.setUsuarioFfIdUsuario(idUsuario);
+        if (origem != null && origem.trim().equalsIgnoreCase("MANUAL")) {
+            HttpSession sessao = obterSessao(request);
+            Long idUsuario = (Long) sessao.getAttribute("idUsuario");
+            // O responsável é sempre o administrador logado.
+            status.setUsuarioFfIdUsuario(idUsuario);
+        }
 
         StatusOperacionalTO resultado = bo.save(status);
 
@@ -75,47 +78,29 @@ public class StatusOperacionalResource {
     }
 
     // update()
-    // Atualiza um status se for adm
-
+    // Atualiza um status se for admin
     @PutMapping("/{id}")
-    public ResponseEntity<Void> atualizar(
-            @PathVariable Long id,
-            @Valid @RequestBody StatusOperacionalTO status,
-            HttpServletRequest request) {
+    public ResponseEntity<Void> atualizar(@PathVariable Long id, @Valid @RequestBody StatusOperacionalTO status, HttpServletRequest request) {
 
         verificarAdmin(request);
 
         status.setIdStatus(id);
 
-        String origem = status.getDsOrigem().trim().toUpperCase();
+        String origem = status.getDsOrigem();
 
-        switch (origem) {
-            case "MANUAL":
-                HttpSession sessao = obterSessao(request);
-                Long idUsuario = (Long) sessao.getAttribute("idUsuario");
+        if (origem != null && origem.trim().equalsIgnoreCase("MANUAL")) {
+            HttpSession sessao = obterSessao(request);
+            Long idUsuario = (Long) sessao.getAttribute("idUsuario");
 
-                status.setUsuarioFfIdUsuario(idUsuario);
-                status.setFonteDadosIdFonte(null);
-                break;
-
-            case "EXTERNA":
-                status.setUsuarioFfIdUsuario(null);
-                // A fonte deve ser informada no JSON.
-                break;
-
-            case "SIMULADA":
-                status.setUsuarioFfIdUsuario(null);
-                status.setFonteDadosIdFonte(null);
-                break;
-
-            default:
-                throw new IllegalArgumentException("Origem inválida.");
+            // O responsável é sempre o administrador logado.
+            status.setUsuarioFfIdUsuario(idUsuario);
         }
 
         bo.update(status);
 
         return ResponseEntity.noContent().build();
     }
+
 
 
     // delete()

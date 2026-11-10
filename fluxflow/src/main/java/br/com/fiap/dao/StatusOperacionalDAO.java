@@ -144,8 +144,12 @@ public class StatusOperacionalDAO {
             }
             ps.setLong(11, status.getIdStatus());
             // Execução de comando
-            ps.executeUpdate();
-            // Retorno de objeto
+            int linhasAfetadas = ps.executeUpdate();
+            // Se não executar
+            if (linhasAfetadas == 0) {
+                return null;
+            }
+            // Retorno de onjeto
             return status;
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao atualizar status operacional: " + e.getMessage(), e);
