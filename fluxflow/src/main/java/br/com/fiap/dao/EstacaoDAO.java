@@ -231,6 +231,8 @@ public class EstacaoDAO {
         estacao.setIdEstacao(rs.getLong("ID_ESTACAO"));
         estacao.setNmEstacao(rs.getString("NM_ESTACAO"));
         estacao.setStEstacao(rs.getString("ST_ESTACAO"));
+        estacao.setDsLatitude(rs.getBigDecimal("DS_LATITUDE"));
+        estacao.setDsLongitude(rs.getBigDecimal("DS_LONGITUDE"));
         // retorno de objeto
         return estacao;
     }
