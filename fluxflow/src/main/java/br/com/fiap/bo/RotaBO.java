@@ -166,6 +166,141 @@ public class RotaBO {
 
 
     /*
+     * BUSCAR ROTA COM MENOS ESTAÇÕES
+     *
+     * Utiliza uma busca com fila para encontrar
+     * o caminho com a menor quantidade de trechos entre a
+     * estação de origem e a estação de destino.
+     *
+     * O primeiro critério é a quantidade de trechos.
+     * Caso dois caminhos tenham a mesma quantidade de trechos,
+     * o que tem menos baldeações vai ser escolhido.
+     */
+    public RotaTO buscarRotaMenosEstacoes(Long idOrigem, Long idDestino) {
+        // Valida os IDs recebidos.
+        if (idOrigem == null || idDestino == null) {
+            throw new IllegalArgumentException("As estações de origem e destino são obrigatórias.");
+        }
+        // Confirma que as estações existem.
+        EstacaoTO estacaoOrigem = estacaoDAO.findById(idOrigem);
+        EstacaoTO estacaoDestino = estacaoDAO.findById(idDestino);
+        if (estacaoOrigem == null || estacaoDestino == null) {
+            throw new IllegalArgumentException("Uma ou ambas as estações não foram encontradas.");
+        }
+        // Caso a origem seja igual ao destino, retorna uma rota vazia.
+        if (idOrigem.equals(idDestino)) {
+            RotaTO rota = new RotaTO();
+            rota.setTrechos(new ArrayList<>());
+            rota.setTotalTrechos(0);
+            rota.setTotalEstacoes(1);
+            rota.setTotalBaldeacoes(0);
+            return rota;
+        }
+        // Monta o grafo da rede metroferroviária.
+        Map<Long, List<ConexaoTO>> grafo = construirGrafo();
+        // Ordena os estados priorizando:
+        // 1º Menos trechos.
+        // 2º Menos baldeações.
+        PriorityQueue<Map.Entry<EstadoRota, CustoRota>> fila = new PriorityQueue<>((a, b) -> {
+                    int comparacao = Integer.compare(a.getValue().trechos, b.getValue().trechos);
+                    if (comparacao != 0) {
+                        return comparacao;
+                    }
+                    return Integer.compare(a.getValue().baldeacoes, b.getValue().baldeacoes);
+                });
+        // Guarda o melhor custo encontrado para cada estado.
+        Map<EstadoRota, CustoRota> melhoresCustos = new HashMap<>();
+        // Armazena o caminho anterior de cada estado.
+        Map<EstadoRota, PassoAnterior> predecessores = new HashMap<>();
+        // Estado inicial: estação de origem, ainda sem linha utilizada.
+        EstadoRota inicial = new EstadoRota(idOrigem, null);
+        // Custo inicial: nenhuma baldeação e nenhum trecho percorrido.
+        CustoRota custoInicial = new CustoRota(0, 0);
+
+        melhoresCustos.put(inicial, custoInicial);
+
+        fila.add(new AbstractMap.SimpleEntry<>(inicial, custoInicial));
+        // Armazenará o estado de destino quando ele for encontrado.
+        EstadoRota estadoFinal = null;
+        while (!fila.isEmpty()) {
+            // Retira o estado de menor custo da fila.
+            Map.Entry<EstadoRota, CustoRota> item = fila.poll();
+
+            EstadoRota atual = item.getKey();
+            CustoRota custoAtual = item.getValue();
+            // Ignora entradas antigas que já foram superadas.
+            CustoRota melhorConhecido = melhoresCustos.get(atual);
+            if (compararCustosMenosEstacoes(custoAtual, melhorConhecido) > 0) {
+                continue;
+            }
+            // Ao retirar o destino da fila, o menor custo.
+            if (atual.getIdEstacao().equals(idDestino)) {
+                estadoFinal = atual;
+                break;
+            }
+
+            // Recupera as conexões disponíveis na estação atual.
+            List<ConexaoTO> vizinhos = grafo.getOrDefault(atual.getIdEstacao(), Collections.emptyList());
+            for (ConexaoTO conexao : vizinhos) {
+                Long proximaEstacao = conexao.getIdEstacaoDestino();
+                Long proximaLinha = conexao.getIdLinha();
+                // Verifica se houve mudança de linha.
+                int novaBaldeacao = 0;
+                if (atual.getIdLinha() != null && !atual.getIdLinha().equals(proximaLinha)) {
+                    novaBaldeacao = 1;
+                }
+                // Calcula o custo acumulado do novo caminho.
+                CustoRota novoCusto = new CustoRota(custoAtual.baldeacoes + novaBaldeacao, custoAtual.trechos + 1);
+                // O próximo estado considera estação e linha.
+                EstadoRota proximo = new EstadoRota(proximaEstacao, proximaLinha);
+
+                CustoRota custoAnterior = melhoresCustos.get(proximo);
+                // Atualiza somente se encontramos um caminho melhor.
+                if (custoAnterior == null || compararCustosMenosEstacoes(novoCusto, custoAnterior) < 0) {
+                    melhoresCustos.put(proximo, novoCusto);
+
+                    predecessores.put(proximo, new PassoAnterior(atual, conexao));
+
+                    fila.add(new AbstractMap.SimpleEntry<>(proximo, novoCusto));
+                }
+            }
+        }
+
+        // Se nenhum estado de destino foi encontrado, não existe rota.
+        if (estadoFinal == null) {
+            throw new IllegalArgumentException("Não existe uma rota entre as estações informadas.");
+        }
+        // Reconstrói o caminho encontrado.
+        List<ConexaoTO> caminho = reconstruirRota(estadoFinal, predecessores);
+        // Converte o caminho para o objeto de resposta da API.
+        return montarRota(caminho);
+    }
+
+
+    /*
+     * COMPARAR CUSTOS - MENOS ESTAÇÕES
+     *
+     * Compara dois caminhos considerando:
+     * 1º Menor quantidade de trechos.
+     * 2º Menor quantidade de baldeações.
+     *
+     * Retorna:
+     * - Valor negativo: primeiro caminho é melhor.
+     * - Zero: os caminhos possuem o mesmo custo.
+     * - Valor positivo: segundo caminho é melhor.
+     */
+    private int compararCustosMenosEstacoes(CustoRota a, CustoRota b) {
+        // Primeiro compara a quantidade de trechos.
+        int comparacao = Integer.compare(a.trechos, b.trechos);
+        if (comparacao != 0) {
+            return comparacao;
+        }
+        // Se empatar, compara a quantidade de baldeações.
+        return Integer.compare(a.baldeacoes, b.baldeacoes);
+    }
+
+
+    /*
      * RECONSTRUIR ROTA
      *
      * O BFS registra os predecessores durante a busca.
