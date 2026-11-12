@@ -1,4 +1,3 @@
-
 package br.com.fiap.dao;
 
 import br.com.fiap.to.PrevisaoLotacaoTO;
@@ -96,7 +95,7 @@ public class PrevisaoLotacaoDAO {
     // READ / SELECT WHERE
     public List<PrevisaoLotacaoTO> findByEstacao(Long idEstacao) {
         // Comando sql a ser executado
-        String sql = "SELECT * FROM PREVISAO_LOTACAO WHERE ESTACAO_ID_ESTACAO = ?ORDER BY DT_PREVISAO DESC, VL_HORAREFERENCIA ";
+        String sql = "SELECT * FROM PREVISAO_LOTACAO WHERE ESTACAO_ID_ESTACAO = ? ORDER BY DT_PREVISAO DESC, VL_HORAREFERENCIA ";
         // Lista de previsões
         List<PrevisaoLotacaoTO> lista = new ArrayList<>();
         // try-with-resources
@@ -124,7 +123,7 @@ public class PrevisaoLotacaoDAO {
     // READ / SELECT WHERE
     public List<PrevisaoLotacaoTO> findByData(Date data) {
         // Comando sql a ser executado
-        String sql = "SELECT * FROM PREVISAO_LOTACAO WHERE DT_PREVISAO = ?ORDER BY VL_HORAREFERENCIA ";
+        String sql = "SELECT * FROM PREVISAO_LOTACAO WHERE DT_PREVISAO = ? ORDER BY VL_HORAREFERENCIA ";
         // Lista de previsões
         List<PrevisaoLotacaoTO> lista = new ArrayList<>();
         // try-with-resources
@@ -148,6 +147,34 @@ public class PrevisaoLotacaoDAO {
         // retorno da lista
         return lista;
     }
+
+    // Consultar índice de lotação de uma estação em uma linha,
+    // considerando uma data e um horário específicos.
+    public Integer findIndiceLotacao(Long idEstacao, Long idLinha, Date data, Integer hora) {
+        // Consulta o índice previsto para a combinação informada.
+        String sql = "SELECT VL_INDICELOTACAO FROM PREVISAO_LOTACAO WHERE ESTACAO_ID_ESTACAO = ? AND LINHA_ID_LINHA = ? AND TRUNC(DT_PREVISAO) = ? AND VL_HORAREFERENCIA = ? ";
+        // try-with-resources
+        try (Connection conn = ConnectionFactory.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            // Substituindo ?
+            ps.setLong(1, idEstacao);
+            ps.setLong(2, idLinha);
+            ps.setDate(3, data);
+            ps.setInt(4, hora);
+            // Executando a consulta.
+            try (ResultSet rs = ps.executeQuery()) {
+                // Retorna o índice encontrado.
+                if (rs.next()) {
+                    return rs.getInt("VL_INDICELOTACAO");
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao consultar índice de lotação: " + e.getMessage(), e);
+        }
+        // Retorna null caso não exista previsão para os parâmetros.
+        return null;
+    }
+
 
     // Converter resultado do banco para TO
     // mapearPrevisao()

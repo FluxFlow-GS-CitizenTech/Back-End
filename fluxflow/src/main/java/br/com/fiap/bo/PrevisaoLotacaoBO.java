@@ -1,4 +1,3 @@
-
 package br.com.fiap.bo;
 
 import br.com.fiap.dao.DemandaHistoricaDAO;
@@ -17,45 +16,45 @@ public class PrevisaoLotacaoBO {
 
     // Gerar previsão de lotação
     // gerarPrevisao()
+
     public PrevisaoLotacaoTO gerarPrevisao(LocalDate dataPrevisao, Integer hora, Long idEstacao, Long idLinha) {
-        // Faz a validação dos parâmetros antes de utilizá-los
+        // Faz a validação dos parâmetros antes de utilizá-los.
         validarParametros(dataPrevisao, hora, idEstacao, idLinha);
-        // Identificar dia da semana
+        // Identifica o dia da semana (segunda = 1, domingo = 7).
         int diaSemana = dataPrevisao.getDayOfWeek().getValue();
-        // Consultar média histórica
+        // Consulta a média histórica da estação, linha, dia e horário.
         Double mediaDemanda = demandaDAO.calcularMediaHistorica(idEstacao, idLinha, diaSemana, hora);
-        // Verifica se a média calculada é nula
+        // Verifica se existem dados históricos para a combinação.
         if (mediaDemanda == null) {
             throw new IllegalArgumentException("Não existem dados históricos para essa combinação.");
         }
-        // Consultar maior média histórica da estação e linha
-        Double maiorMedia = demandaDAO.calcularMaiorMediaHistorica(idEstacao, idLinha);
-        // Verifica se é nula ou menor que 0
-        if (maiorMedia == null || maiorMedia <= 0) {
-            throw new IllegalArgumentException("Não foi possível calcular a referência histórica.");
+        // Consulta a maior demanda média histórica de toda a rede.
+        Double maiorDemandaRede = demandaDAO.calcularMaiorDemandaRede();
+        // Verifica se a referência global é válida.
+        if (maiorDemandaRede == null || maiorDemandaRede <= 0) {
+            throw new IllegalArgumentException("Não foi possível calcular a referência histórica da rede.");
         }
-
-        // Calcular índice entre 0 e 100
-        int indice = (int) Math.round((mediaDemanda / maiorMedia) * 100);
+        // Calcula o índice proporcional à maior demanda da rede.
+        int indice = (int) Math.round((mediaDemanda / maiorDemandaRede) * 100);
+        // Garante que o índice permaneça entre 0 e 100.
         indice = Math.max(0, Math.min(100, indice));
-        // Classificar índice
+        // Classifica o índice calculado.
         String classificacao = classificarLotacao(indice);
-
-        // Montar objeto da previsão
+        // Monta o objeto da previsão.
         PrevisaoLotacaoTO previsao = new PrevisaoLotacaoTO();
-        // Preenchimento de objeto
+        // Preenche os atributos da previsão.
         previsao.setDtPrevisao(dataPrevisao);
         previsao.setVlHoraReferencia(hora);
         previsao.setVlIndiceLotacao(indice);
         previsao.setDsClassificacao(classificacao);
-        previsao.setDsModeloUtilizado("MEDIA_HISTORICA_NORMALIZADA_V1");
+        previsao.setDsModeloUtilizado("DEMANDA_RELATIVA_REDE_V2");
         previsao.setDtGeracao(LocalDateTime.now());
         previsao.setEstacaoIdEstacao(idEstacao);
         previsao.setLinhaIdLinha(idLinha);
-
-        // Salvar previsão no banco
-        return previsaoDAO.save(previsao);
+        // Salva a previsão no banco de dados.
+        return previsao;
     }
+
 
     // Classificar índice de lotação
     // classificarLotacao()
@@ -70,7 +69,7 @@ public class PrevisaoLotacaoBO {
         if (indice <= 75) {
             return "ALTA";
         }
-        return "MUITO_ALTA";
+        return "MUITO ALTA";
     }
 
     // Validar parâmetros recebidos

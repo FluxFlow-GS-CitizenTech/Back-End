@@ -2,10 +2,12 @@ package br.com.fiap.bo;
 
 import br.com.fiap.dao.EstacaoDAO;
 import br.com.fiap.dao.LinhaDAO;
+import br.com.fiap.dao.PrevisaoLotacaoDAO;
 import br.com.fiap.dao.RotaDAO;
 
 import br.com.fiap.to.*;
 
+import java.time.LocalDate;
 import java.util.*;
 
 public class RotaBO {
@@ -14,6 +16,13 @@ public class RotaBO {
     private final RotaDAO rotaDAO = new RotaDAO();
     private final EstacaoDAO estacaoDAO = new EstacaoDAO();
     private final LinhaDAO linhaDAO = new LinhaDAO();
+    private final PrevisaoLotacaoDAO previsaoLotacaoDAO = new PrevisaoLotacaoDAO();
+    // Instância responsável por gerar previsões de lotação.
+    private final PrevisaoLotacaoBO previsaoLotacaoBO = new PrevisaoLotacaoBO();
+    // Parâmetros utilizados para estimar o tempo da viagem (em minutos).
+    private static final int TEMPO_POR_TRECHO = 2;
+    private static final int TEMPO_ESPERA_POR_EMBARQUE = 1;
+    private static final int TEMPO_POR_BALDEACAO = 4;
 
 
     /*
@@ -277,6 +286,295 @@ public class RotaBO {
     }
 
 
+    public RotaTO buscarRotaMaisRapida(Long idOrigem, Long idDestino) {
+        // Valida os IDs recebidos.
+        if (idOrigem == null || idDestino == null) {
+            throw new IllegalArgumentException("As estações de origem e destino são obrigatórias.");
+        }
+        // Confirma que as estações existem.
+        EstacaoTO estacaoOrigem = estacaoDAO.findById(idOrigem);
+        EstacaoTO estacaoDestino = estacaoDAO.findById(idDestino);
+        if (estacaoOrigem == null || estacaoDestino == null) {
+            throw new IllegalArgumentException("Uma ou ambas as estações não foram encontradas.");
+        }
+        // Caso a origem seja igual ao destino, retorna uma rota vazia.
+        if (idOrigem.equals(idDestino)) {
+            RotaTO rota = new RotaTO();
+            rota.setTrechos(new ArrayList<>());
+            rota.setTotalTrechos(0);
+            rota.setTotalEstacoes(1);
+            rota.setTotalBaldeacoes(0);
+            // Não existe deslocamento, espera ou baldeação.
+            rota.setTempoDeslocamento(0);
+            rota.setTempoEspera(0);
+            rota.setTempoBaldeacoes(0);
+            rota.setTempoTotal(0);
+
+            return rota;
+        }
+        // Monta o grafo da rede metroferroviária.
+        Map<Long, List<ConexaoTO>> grafo = construirGrafo();
+        // Ordena os estados priorizando o menor tempo estimado.
+        PriorityQueue<Map.Entry<EstadoRota, CustoRota>> fila = new PriorityQueue<>((a, b) -> compararCustosPorTempo(a.getValue(), b.getValue()));
+        // Guarda o melhor custo encontrado para cada estado.
+        Map<EstadoRota, CustoRota> melhoresCustos = new HashMap<>();
+        // Armazena o caminho anterior de cada estado.
+        Map<EstadoRota, PassoAnterior> predecessores = new HashMap<>();
+        // Estado inicial: estação de origem, ainda sem linha utilizada.
+        EstadoRota inicial = new EstadoRota(idOrigem, null);
+
+        CustoRota custoInicial = new CustoRota(0, 0);
+
+        melhoresCustos.put(inicial, custoInicial);
+        fila.add(new AbstractMap.SimpleEntry<>(inicial, custoInicial));
+        // Armazenará o estado de destino quando ele for encontrado.
+        EstadoRota estadoFinal = null;
+
+        while (!fila.isEmpty()) {
+            // Retira o estado com menor tempo estimado.
+            Map.Entry<EstadoRota, CustoRota> item = fila.poll();
+            EstadoRota atual = item.getKey();
+            CustoRota custoAtual = item.getValue();
+            // Ignora entradas antigas da fila que já foram superadas.
+            CustoRota melhorConhecido = melhoresCustos.get(atual);
+            if (compararCustosPorTempo(custoAtual, melhorConhecido) > 0) {
+                continue;
+            }
+            // Ao retirar o destino da fila, encontramos seu menor custo.
+            if (atual.getIdEstacao().equals(idDestino)) {
+                estadoFinal = atual;
+                break;
+            }
+            // Recupera as conexões disponíveis na estação atual.
+            List<ConexaoTO> vizinhos = grafo.getOrDefault(atual.getIdEstacao(), Collections.emptyList());
+            for (ConexaoTO conexao : vizinhos) {
+
+                Long proximaEstacao = conexao.getIdEstacaoDestino();
+                Long proximaLinha = conexao.getIdLinha();
+                // Verifica se houve mudança de linha.
+                int novaBaldeacao = 0;
+
+                if (atual.getIdLinha() != null && !atual.getIdLinha().equals(proximaLinha)) {
+                    novaBaldeacao = 1;
+                }
+                // Calcula o novo custo acumulado.
+                CustoRota novoCusto = new CustoRota(custoAtual.baldeacoes + novaBaldeacao, custoAtual.trechos + 1);
+                // O próximo estado considera estação E linha.
+                EstadoRota proximo = new EstadoRota(proximaEstacao, proximaLinha);
+
+                CustoRota custoAnterior = melhoresCustos.get(proximo);
+                // Atualiza somente se encontramos um caminho mais rápido.
+                if (custoAnterior == null || compararCustosPorTempo(novoCusto, custoAnterior) < 0) {
+                    melhoresCustos.put(proximo, novoCusto);
+                    predecessores.put(proximo, new PassoAnterior(atual, conexao));
+                    fila.add(new AbstractMap.SimpleEntry<>(proximo, novoCusto));
+                }
+            }
+        }
+        // Se nenhum estado de destino foi encontrado, não existe rota.
+        if (estadoFinal == null) {
+            throw new IllegalArgumentException("Não existe uma rota entre as estações informadas.");
+        }
+        // Reconstrói o caminho encontrado.
+        List<ConexaoTO> caminho = reconstruirRota(estadoFinal, predecessores);
+        // Monta a resposta com os dados e tempos estimados.
+        return montarRota(caminho);
+    }
+
+
+    // Busca a rota que apresenta a menor média de lotação.
+    public RotaTO buscarRotaMenorLotacao(Long idOrigem, Long idDestino, Date data, Integer hora) {
+        // Valida os parâmetros recebidos.
+        if (idOrigem == null || idDestino == null || data == null || hora == null) {
+            throw new IllegalArgumentException("Origem, destino, data e horário são obrigatórios.");
+        }
+        if (hora < 0 || hora > 23) {
+            throw new IllegalArgumentException("O horário deve estar entre 0 e 23.");
+        }
+        // Confirma que as estações existem.
+        if (estacaoDAO.findById(idOrigem) == null || estacaoDAO.findById(idDestino) == null) {
+            throw new IllegalArgumentException("Uma ou ambas as estações não foram encontradas.");
+        }
+        // Caso a origem seja igual ao destino, não há trechos para avaliar.
+        if (idOrigem.equals(idDestino)) {
+            RotaTO rota = new RotaTO();
+            rota.setTrechos(new ArrayList<>());
+            rota.setTotalTrechos(0);
+            rota.setTotalEstacoes(1);
+            rota.setTotalBaldeacoes(0);
+            rota.setIndiceMedioLotacao(0.0);
+            rota.setIndiceMaximoLotacao(0);
+            rota.setClassificacaoLotacao("Baixa");
+            return rota;
+        }
+        // Monta o grafo da rede metroferroviária.
+        Map<Long, List<ConexaoTO>> grafo = construirGrafo();
+        // Prepara todas as previsões antes de iniciar a busca.
+        Map<String, Integer> indicesLotacao = carregarIndicesLotacao(grafo, data, hora);
+        // Estruturas utilizadas para armazenar a melhor rota encontrada.
+        List<ConexaoTO> melhorCaminho = new ArrayList<>();
+        // Guarda os melhores valores encontrados durante a busca.
+        double[] menorMedia = {Double.MAX_VALUE};
+        int[] menorBaldeacoes = {Integer.MAX_VALUE};
+        int[] menorTrechos = {Integer.MAX_VALUE};
+        // Controla as estações já visitadas.
+        Set<Long> visitadas = new HashSet<>();
+        visitadas.add(idOrigem);
+        // Inicia a busca em profundidade.
+        // A busca começa sem linha anterior, sem baldeações e sem trechos.
+        buscarCaminhosPorLotacao(idOrigem, idDestino, grafo, indicesLotacao, visitadas, new ArrayList<>(), 0, null, 0, melhorCaminho, menorMedia, menorBaldeacoes, menorTrechos);
+        // Verifica se alguma rota foi encontrada.
+        if (melhorCaminho.isEmpty()) {
+            throw new IllegalArgumentException("Não foi encontrada uma rota entre as estações informadas.");
+        }
+        // Monta o objeto de resposta.
+        RotaTO rota = montarRota(melhorCaminho);
+        // Calcula os indicadores de lotação da rota selecionada.
+        int somaLotacao = 0;
+        int maiorLotacao = 0;
+        for (ConexaoTO conexao : melhorCaminho) {
+            // Recupera o índice diretamente da memória.
+            String chave = conexao.getIdEstacaoDestino() + "-" + conexao.getIdLinha();
+
+            Integer indice = indicesLotacao.get(chave);
+
+            somaLotacao += indice;
+
+            if (indice > maiorLotacao) {
+                maiorLotacao = indice;
+            }
+        }
+        // Calcula a média de lotação dos trechos.
+        double mediaLotacao = (double) somaLotacao / melhorCaminho.size();
+        // Classifica a lotação média.
+        String classificacao;
+        if (mediaLotacao <= 25) {
+            classificacao = "Baixa";
+        } else if (mediaLotacao <= 50) {
+            classificacao = "Moderada";
+        } else if (mediaLotacao <= 75) {
+            classificacao = "Alta";
+        } else {
+            classificacao = "Muito alta";
+        }
+        // Preenche os indicadores no objeto de resposta.
+        rota.setIndiceMedioLotacao(mediaLotacao);
+        rota.setIndiceMaximoLotacao(maiorLotacao);
+        rota.setClassificacaoLotacao(classificacao);
+        return rota;
+    }
+
+
+    /*
+     * BUSCAR CAMINHOS POR LOTAÇÃO
+     *
+     * Percorre os caminhos possíveis utilizando DFS (busca em profundidade).
+     *
+     * A seleção da melhor rota considera:
+     * 1º Menor média de lotação.
+     * 2º Menor quantidade de baldeações.
+     * 3º Menor quantidade de trechos.
+     */
+    private void buscarCaminhosPorLotacao(Long estacaoAtual, Long idDestino, Map<Long, List<ConexaoTO>> grafo, Map<String, Integer> indicesLotacao, Set<Long> visitadas, List<ConexaoTO> caminhoAtual, int somaLotacao, Long linhaAnterior, int baldeacoes, List<ConexaoTO> melhorCaminho, double[] menorMedia, int[] menorBaldeacoes, int[] menorTrechos) {
+        // Quando chegamos ao destino, avaliamos a rota completa.
+        if (estacaoAtual.equals(idDestino)) {
+            // Calcula a média de lotação dos trechos percorridos.
+            double media = (double) somaLotacao / caminhoAtual.size();
+            // Recupera a quantidade de trechos da rota atual.
+            int quantidadeTrechos = caminhoAtual.size();
+            // Compara a rota atual com a melhor rota encontrada.
+            boolean rotaMelhor = false;
+            // Primeiro critério: menor média de lotação.
+            if (media < menorMedia[0] - 0.000001) {
+                rotaMelhor = true;
+            // Segundo critério: menor quantidade de baldeações.
+            } else if (Math.abs(media - menorMedia[0]) < 0.000001 && baldeacoes < menorBaldeacoes[0]) {
+                rotaMelhor = true;
+            // Terceiro critério: menor quantidade de trechos.
+            } else if (Math.abs(media - menorMedia[0]) < 0.000001 && baldeacoes == menorBaldeacoes[0] && quantidadeTrechos < menorTrechos[0]) {
+                rotaMelhor = true;
+            }
+            // Atualiza os dados caso a rota atual seja melhor.
+            if (rotaMelhor) {
+                menorMedia[0] = media;
+                menorBaldeacoes[0] = baldeacoes;
+                menorTrechos[0] = quantidadeTrechos;
+
+                melhorCaminho.clear();
+                melhorCaminho.addAll(caminhoAtual);
+            }
+            return;
+        }
+        // Recupera as conexões disponíveis na estação atual.
+        List<ConexaoTO> vizinhos = grafo.getOrDefault(estacaoAtual, Collections.emptyList());
+        // Analisa cada conexão disponível.
+        for (ConexaoTO conexao : vizinhos) {
+            Long proximaEstacao = conexao.getIdEstacaoDestino();
+            Long proximaLinha = conexao.getIdLinha();
+            // Não permite visitar novamente uma estação no mesmo caminho.
+            if (visitadas.contains(proximaEstacao)) {
+                continue;
+            }
+            // Recupera o índice de lotação da próxima estação e linha.
+            String chave = proximaEstacao + "-" + proximaLinha;
+
+            Integer indiceLotacao = indicesLotacao.get(chave);
+            // Ignora conexões sem índice de lotação disponível.
+            if (indiceLotacao == null) {
+                continue;
+            }
+            // Verifica se houve mudança de linha.
+            int novaBaldeacao = 0;
+            if (linhaAnterior != null && !linhaAnterior.equals(proximaLinha)) {
+                novaBaldeacao = 1;
+            }
+            // Adiciona a próxima estação e conexão ao caminho atual.
+            visitadas.add(proximaEstacao);
+            caminhoAtual.add(conexao);
+            // Continua a busca acumulando lotação e baldeações.
+            buscarCaminhosPorLotacao(proximaEstacao, idDestino, grafo, indicesLotacao, visitadas, caminhoAtual, somaLotacao + indiceLotacao, proximaLinha, baldeacoes + novaBaldeacao, melhorCaminho, menorMedia, menorBaldeacoes, menorTrechos);
+            // Remove os elementos adicionados para explorar outro caminho.
+            caminhoAtual.remove(caminhoAtual.size() - 1);
+            visitadas.remove(proximaEstacao);
+        }
+    }
+
+
+
+    // Carrega as previsões de lotação necessárias antes de iniciar o DFS.
+    private Map<String, Integer> carregarIndicesLotacao(Map<Long, List<ConexaoTO>> grafo, Date data, Integer hora) {
+        // Armazena os índices utilizando estação de destino e linha como chave.
+        Map<String, Integer> indicesLotacao = new HashMap<>();
+        // Evita consultar mais de uma vez a mesma combinação.
+        Set<String> combinacoesVerificadas = new HashSet<>();
+        // Percorre todas as conexões existentes no grafo.
+        for (List<ConexaoTO> conexoes : grafo.values()) {
+            for (ConexaoTO conexao : conexoes) {
+                Long idEstacao = conexao.getIdEstacaoDestino();
+                Long idLinha = conexao.getIdLinha();
+                // Cria uma chave única para a combinação estação e linha.
+                String chave = idEstacao + "-" + idLinha;
+                // Ignora combinações que já foram verificadas.
+                if (!combinacoesVerificadas.add(chave)) {
+                    continue;
+                }
+                // Consulta a previsão existente no Oracle.
+                Integer indice = previsaoLotacaoDAO.findIndiceLotacao(idEstacao, idLinha, (java.sql.Date) data, hora
+                );
+                // Se não existir previsão, gera uma utilizando os dados históricos.
+                if (indice == null) {
+                    PrevisaoLotacaoTO previsao = previsaoLotacaoBO.gerarPrevisao(((java.sql.Date) data).toLocalDate(), hora, idEstacao, idLinha);
+                    indice = previsao.getVlIndiceLotacao();
+                }
+                // Armazena o índice em memória.
+                indicesLotacao.put(chave, indice);
+            }
+        }
+        // Retorna todas as previsões carregadas.
+        return indicesLotacao;
+    }
+
+
     /*
      * COMPARAR CUSTOS - MENOS ESTAÇÕES
      *
@@ -297,6 +595,24 @@ public class RotaBO {
         }
         // Se empatar, compara a quantidade de baldeações.
         return Integer.compare(a.baldeacoes, b.baldeacoes);
+    }
+
+
+    /*
+     * Compara dois caminhos considerando o tempo total estimado.
+     *
+     * Retorna:
+     * - Negativo: caminho A é mais rápido.
+     * - Positivo: caminho B é mais rápido.
+     * - Zero: os caminhos possuem o mesmo tempo estimado.
+     */
+    private int compararCustosPorTempo(CustoRota a, CustoRota b) {
+        // Calcula o tempo total estimado do caminho A.
+        int tempoA = (a.trechos * TEMPO_POR_TRECHO) + ((a.baldeacoes + 1) * TEMPO_ESPERA_POR_EMBARQUE) + (a.baldeacoes * TEMPO_POR_BALDEACAO);
+        // Calcula o tempo total estimado do caminho B.
+        int tempoB = (b.trechos * TEMPO_POR_TRECHO) + ((b.baldeacoes + 1) * TEMPO_ESPERA_POR_EMBARQUE) + (b.baldeacoes * TEMPO_POR_BALDEACAO);
+        // Retorno
+        return Integer.compare(tempoA, tempoB);
     }
 
 
@@ -340,7 +656,6 @@ public class RotaBO {
      *
      * Também calcula os totais de trechos, estações e baldeações.
      */
-
     private RotaTO montarRota(List<ConexaoTO> conexoes) {
         RotaTO rota = new RotaTO();
         List<TrechoTO> trechos = new ArrayList<>();
@@ -391,6 +706,22 @@ public class RotaBO {
 
         rota.setTotalBaldeacoes(baldeacoes);
 
+        // Calcula os tempos estimados da viagem (em minutos).
+        // Tempo total dentro dos trens: 2 minutos por trecho.
+        int tempoDeslocamento = trechos.size() * TEMPO_POR_TRECHO;
+        // Considera o embarque inicial e um novo embarque após cada baldeação.
+        int quantidadeEmbarques = baldeacoes + 1;
+        int tempoEspera = quantidadeEmbarques * TEMPO_ESPERA_POR_EMBARQUE;
+        // Tempo gasto nas transferências entre linhas.
+        int tempoBaldeacoes = baldeacoes * TEMPO_POR_BALDEACAO;
+        // Soma os componentes para obter o tempo total estimado.
+        int tempoTotal = tempoDeslocamento + tempoEspera + tempoBaldeacoes;
+        // Adiciona os tempos calculados ao objeto de resposta.
+        rota.setTempoDeslocamento(tempoDeslocamento);
+        rota.setTempoEspera(tempoEspera);
+        rota.setTempoBaldeacoes(tempoBaldeacoes);
+        rota.setTempoTotal(tempoTotal);
+        // Retorno de objeto
         return rota;
     }
 

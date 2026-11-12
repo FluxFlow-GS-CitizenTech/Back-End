@@ -13,8 +13,8 @@ public class RotaDAO {
     // findConexoes()
     // READ / SUBSELECT
     public List<ConexaoTO> findConexoes() {
-        // Comando sql a ser executado
-        String sql = "SELECT ID_LINHA, ID_ESTACAO_ATUAL, ID_ESTACAO_PROXIMA FROM (SELECT ID_LINHA, ID_ESTACAO AS ID_ESTACAO_ATUAL, LEAD(ID_ESTACAO) OVER (PARTITION BY ID_LINHA ORDER BY DS_ORDEM ) AS ID_ESTACAO_PROXIMA FROM LINHA_ESTACAO) WHERE ID_ESTACAO_PROXIMA IS NOT NULL";
+        // Consulta as estações ativas antes de calcular a próxima estação.
+        String sql = "SELECT ID_LINHA, ID_ESTACAO_ATUAL, ID_ESTACAO_PROXIMA FROM (SELECT LE.ID_LINHA, LE.ID_ESTACAO AS ID_ESTACAO_ATUAL, LEAD(LE.ID_ESTACAO) OVER (PARTITION BY LE.ID_LINHA ORDER BY LE.DS_ORDEM) AS ID_ESTACAO_PROXIMA FROM LINHA_ESTACAO LE JOIN ESTACAO E ON E.ID_ESTACAO = LE.ID_ESTACAO WHERE E.ST_ESTACAO = 'T') WHERE ID_ESTACAO_PROXIMA IS NOT NULL ";
         // Nova lista de conexoes
         List<ConexaoTO> conexoes = new ArrayList<>();
         // try-with-resources

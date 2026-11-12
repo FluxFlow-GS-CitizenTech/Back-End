@@ -113,33 +113,29 @@ public class DemandaHistoricaDAO {
         return null;
     }
 
-    // Consultar a maior média histórica de uma estação e linha
-    // calcularMaiorMediaHistorica()
-    public Double calcularMaiorMediaHistorica(Long idEstacao, Long idLinha) {
-        // Comando sql a ser executado
-        String sql = "SELECT MAX(MEDIA_DEMANDA) FROM (SELECT AVG(QTD_PASSAGEIROS) AS MEDIA_DEMANDA FROM DEMANDA_HISTORICA WHERE ESTACAO_ID_ESTACAO = ? AND LINHA_ID_LINHA = ? GROUP BY NUM_DIASEMANA, VL_HORAREFERENCIA)";
-        // try-with-resources
+
+    // Consultar a maior média histórica de demanda de toda a rede
+    // calcularMaiorDemandaRede()
+    // Considera todas as estações, linhas, dias da semana e horários.
+    public Double calcularMaiorDemandaRede() {
+        // Consulta a maior média de passageiros encontrada na rede.
+        String sql = "SELECT MAX(MEDIA_DEMANDA) FROM (SELECT AVG(QTD_PASSAGEIROS) AS MEDIA_DEMANDA FROM DEMANDA_HISTORICA GROUP BY ESTACAO_ID_ESTACAO, LINHA_ID_LINHA, NUM_DIASEMANA, VL_HORAREFERENCIA)";
+        // try-with-resources para fechar a conexão automaticamente.
         try (Connection conn = ConnectionFactory.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            // substituindo ?
-            ps.setLong(1, idEstacao);
-            ps.setLong(2, idLinha);
-            // try-with-resources
-            try (ResultSet rs = ps.executeQuery()) {
-                // Se executar
-                if (rs.next()) {
-                    // Armazena a maior média e retorna ela se não for nula
-                    double maiorMedia = rs.getDouble(1);
-                    return rs.wasNull() ? null : maiorMedia;
-                }
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            // Se a consulta retornar um resultado, armazena a maior média.
+            if (rs.next()) {
+                double maiorDemanda = rs.getDouble(1);
+                // Retorna null caso não existam dados históricos.
+                return rs.wasNull() ? null : maiorDemanda;
             }
         } catch (SQLException e) {
-            throw new RuntimeException(
-                    "Erro ao calcular maior média histórica: " + e.getMessage(), e
-            );
+            throw new RuntimeException("Erro ao calcular maior demanda histórica da rede: " + e.getMessage(), e);
         }
         return null;
     }
+
 
     // Converter resultado do banco para TO
     // mapearDemanda()

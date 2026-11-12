@@ -8,6 +8,13 @@ public class RotaTO {
     private int totalTrechos;
     private int totalEstacoes;
     private int totalBaldeacoes;
+    private Integer tempoDeslocamento;
+    private Integer tempoEspera;
+    private Integer tempoBaldeacoes;
+    private Integer tempoTotal;
+    private Double indiceMedioLotacao;
+    private Integer indiceMaximoLotacao;
+    private String classificacaoLotacao;
 
     // Construtor Vazio
     public RotaTO() {
@@ -44,5 +51,61 @@ public class RotaTO {
 
     public void setTotalBaldeacoes(int totalBaldeacoes) {
         this.totalBaldeacoes = totalBaldeacoes;
+    }
+
+    public Integer getTempoDeslocamento() {
+        return tempoDeslocamento;
+    }
+
+    public void setTempoDeslocamento(Integer tempoDeslocamento) {
+        this.tempoDeslocamento = tempoDeslocamento;
+    }
+
+    public Integer getTempoEspera() {
+        return tempoEspera;
+    }
+
+    public void setTempoEspera(Integer tempoEspera) {
+        this.tempoEspera = tempoEspera;
+    }
+
+    public Integer getTempoBaldeacoes() {
+        return tempoBaldeacoes;
+    }
+
+    public void setTempoBaldeacoes(Integer tempoBaldeacoes) {
+        this.tempoBaldeacoes = tempoBaldeacoes;
+    }
+
+    public Integer getTempoTotal() {
+        return tempoTotal;
+    }
+
+    public void setTempoTotal(Integer tempoTotal) {
+        this.tempoTotal = tempoTotal;
+    }
+
+    public Double getIndiceMedioLotacao() {
+        return indiceMedioLotacao;
+    }
+
+    public void setIndiceMedioLotacao(Double indiceMedioLotacao) {
+        this.indiceMedioLotacao = indiceMedioLotacao;
+    }
+
+    public Integer getIndiceMaximoLotacao() {
+        return indiceMaximoLotacao;
+    }
+
+    public void setIndiceMaximoLotacao(Integer indiceMaximoLotacao) {
+        this.indiceMaximoLotacao = indiceMaximoLotacao;
+    }
+
+    public String getClassificacaoLotacao() {
+        return classificacaoLotacao;
+    }
+
+    public void setClassificacaoLotacao(String classificacaoLotacao) {
+        this.classificacaoLotacao = classificacaoLotacao;
     }
 }
