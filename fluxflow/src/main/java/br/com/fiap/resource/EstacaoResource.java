@@ -56,8 +56,8 @@ public class EstacaoResource {
     public ResponseEntity<?> save(@Valid @RequestBody EstacaoTO estacao, HttpServletRequest request) {
         // Armazena sessão
         HttpSession session = obterSessao(request);
-        // Verifica perfil
-        verificarUsuarioLogado(session);
+        // Verifica se é adm
+        verificarAdmin(session);
         // Cria estação
         estacaoBO.save(estacao);
 

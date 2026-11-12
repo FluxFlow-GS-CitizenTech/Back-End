@@ -46,12 +46,8 @@ public class LinhaResource {
     public ResponseEntity<?> save(@Valid @RequestBody LinhaTO linha, HttpServletRequest request) {
         // Captura a sessão
         HttpSession session = obterSessao(request);
-        // Armazena o perfil de acesso da sessão
-        Long perfil = (Long) session.getAttribute("perfilAcessoIdPerfil");
-        // Verifica o perfil
-        if (perfil == null || (!perfil.equals(16L) && !perfil.equals(17L))) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Perfil sem permissão para cadastrar linhas.");
-        }
+        // Verifica se é adm
+        verificarAdmin(session);
         // Se permitido, cadastra a linha
         linhaBO.save(linha);
 
