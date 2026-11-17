@@ -149,7 +149,6 @@ def buscar_rota(rede, origem, destino, criterio):
         for vizinho, minutos in rede[atual]:
             custo = minutos
             if criterio == 'lotacao':
-                # Penalidade ficticia para evitar estacoes mais cheias.
                 custo += lotacao(vizinho[0]) // 15
             novo = custos[atual] + custo
             if novo < custos[vizinho]:
@@ -164,7 +163,7 @@ def buscar_rota(rede, origem, destino, criterio):
     return caminho
 
 def tempo_rota(rede, caminho):
-    minutos = 1  # Espera inicial simulada.
+    minutos = 1 
     for i in range(len(caminho) - 1):
         for vizinho, tempo in rede[caminho[i]]:
             if vizinho == caminho[i + 1]:
